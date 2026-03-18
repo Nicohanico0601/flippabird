@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Webcam Flappy Bird - 完整遊戲版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; background: #222; font-family: 'Arial', sans-serif; }
+        canvas { border: 4px solid #fff; background: #70c5ce; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #video-container { position: fixed; top: 10px; left: 10px; width: 180px; border: 2px solid #00ff00; transform: scaleX(-1); border-radius: 8px; }
+        .ui { position: fixed; top: 20px; color: white; text-shadow: 2px 2px #000; font-size: 24px; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <video id="input_video" style="display:none;"></video>
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <canvas id="video-container" width="180" height="135"></canvas>
+    <div class="ui">分數: <span id="scoreVal">0</span></div>
+
+    <script type="module">
+        const videoElement = document.getElementById('input_video');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const debugCanvas = document.getElementById('video-container');
+        const dctx = debugCanvas.getContext('2d');
+        const scoreEl = document.getElementById('scoreVal');
+
+        // 遊戲參數
+        let birdY = 300, velocity = 0, gravity = 0.5;
+        let pipes = [];
+        let score = 0;
+        let isJumping = false;
+        let gameActive = true;
+
+        // 初始化水管
+        function createPipe() {
+            const gap = 150; // 水管缺口大小
+            const minPipeHeight = 50;
+            const pipeHeight = Math.random() * (canvas.height - gap - minPipeHeight * 2) + minPipeHeight;
+            pipes.push({ x: canvas.width, top: pipeHeight, bottom: canvas.height - pipeHeight - gap });
+        }
+
+        function resetGame() {
+            birdY = 300; velocity = 0; pipes = []; score = 0; gameActive = true;
+            scoreEl.innerText = score;
+            createPipe();
+        }
+
+        function draw() {
+            if (!gameActive) return;
+
+            // 1. 背景
+            ctx.fillStyle = "#70c5ce";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. 小鳥物理
+            velocity += gravity;
+            birdY += velocity;
+
+            // 3. 水管邏輯
+            if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - 200) createPipe();
+
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                pipes[i].x -= 3; // 水管移動速度
+
+                // 繪製水管 (綠色)
+                ctx.fillStyle = "#2ecc71";
+                ctx.fillRect(pipes[i].x, 0, 50, pipes[i].top); // 上水管
+                ctx.fillRect(pipes[i].x, canvas.height - pipes[i].bottom, 50, pipes[i].bottom); // 下水管
+
+                // 碰撞偵測
+                if (50 + 15 > pipes[i].x && 50 - 15 < pipes[i].x + 50) {
+                    if (birdY - 15 < pipes[i].top || birdY + 15 > canvas.height - pipes[i].bottom) {
+                        gameActive = false;
+                        setTimeout(resetGame, 2000); // 兩秒後重開
+                    }
+                }
+
+                // 得分判定
+                if (pipes[i].x === 0) {
+                    score++;
+                    scoreEl.innerText = score;
+                }
+
+                // 移除超出螢幕的水管
+                if (pipes[i].x < -50) pipes.splice(i, 1);
+            }
+
+            // 4. 繪製小鳥
+            ctx.fillStyle = "#f1c40f";
+            ctx.beginPath();
+            ctx.arc(50, birdY, 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 5. 邊界檢查
+            if (birdY > canvas.height || birdY < 0) {
+                gameActive = false;
+                setTimeout(resetGame, 2000);
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        // Mediapipe 偵測
+        function onResults(results) {
+            dctx.save();
+            dctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            dctx.drawImage(results.image, 0, 0, debugCanvas.width, debugCanvas.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const hand = results.multiHandLandmarks[0];
+                const indexFingerTip = hand[8]; // 食指
+
+                // 偵測邏輯：當手指進入畫面頂端 30% 區域觸發跳躍
+                if (indexFingerTip.y < 0.3 && !isJumping) {
+                    velocity = -8;
+                    isJumping = true;
+                    ctx.fillStyle = "white"; // 視覺回饋：跳躍時閃一下
+                } else if (indexFingerTip.y > 0.4) {
+                    isJumping = false;
+                }
+                
+                // 畫出指尖位置（除錯用）
+                dctx.fillStyle = "red";
+                dctx.beginPath();
+                dctx.arc(indexFingerTip.x * debugCanvas.width, indexFingerTip.y * debugCanvas.height, 5, 0, 2*Math.PI);
+                dctx.fill();
+            }
+            dctx.restore();
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+
+        camera.start();
+        resetGame();
+        draw();
+    </script>
+</body>
+</html>
