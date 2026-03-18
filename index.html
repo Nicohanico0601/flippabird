@@ -35,4 +35,111 @@
         // --- 運動偵測參數 ---
         let lastHandY = 0;
         let isJumping = false;
-        const sensitivity
+        const sensitivity = 0.012; // 揮動靈敏度：越小越靈敏
+
+        function createPipe() {
+            const gap = 160;
+            const top = Math.random() * (canvas.height - gap - 100) + 50;
+            pipes.push({ x: canvas.width, top: top, bottom: canvas.height - top - gap, passed: false });
+        }
+
+        function resetGame() {
+            birdY = 300; velocity = 0; pipes = []; score = 0;
+            scoreEl.innerText = score;
+            gameActive = true;
+            createPipe();
+        }
+
+        function draw() {
+            ctx.fillStyle = "#70c5ce";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (gameActive) {
+                velocity += gravity;
+                birdY += velocity;
+
+                if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - 220) createPipe();
+
+                for (let i = pipes.length - 1; i >= 0; i--) {
+                    pipes[i].x -= 3.5;
+                    ctx.fillStyle = "#2ecc71";
+                    ctx.fillRect(pipes[i].x, 0, 52, pipes[i].top);
+                    ctx.fillRect(pipes[i].x, canvas.height - pipes[i].bottom, 52, pipes[i].bottom);
+
+                    // 碰撞
+                    if (50 + 12 > pipes[i].x && 50 - 12 < pipes[i].x + 52) {
+                        if (birdY - 12 < pipes[i].top || birdY + 12 > canvas.height - pipes[i].bottom) gameActive = false;
+                    }
+                    // 計分
+                    if (!pipes[i].passed && pipes[i].x < 50) {
+                        score++; scoreEl.innerText = score; pipes[i].passed = true;
+                    }
+                    if (pipes[i].x < -60) pipes.splice(i, 1);
+                }
+                if (birdY > canvas.height || birdY < 0) gameActive = false;
+            } else {
+                ctx.fillStyle = "rgba(0,0,0,0.5)";
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.fillStyle = "white";
+                ctx.textAlign = "center";
+                ctx.font = "bold 30px Arial";
+                ctx.fillText(score === 0 ? "準備好了嗎？" : "GAME OVER", canvas.width/2, 280);
+                ctx.font = "18px Arial";
+                ctx.fillText("向上揮動手掌 或是 點擊畫面開始", canvas.width/2, 330);
+            }
+
+            // 畫小鳥
+            ctx.fillStyle = "#f1c40f";
+            ctx.beginPath(); ctx.arc(50, birdY, 15, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = "#000"; ctx.stroke();
+
+            requestAnimationFrame(draw);
+        }
+
+        function onResults(results) {
+            dctx.save();
+            dctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            dctx.drawImage(results.image, 0, 0, debugCanvas.width, debugCanvas.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const currentY = results.multiHandLandmarks[0][8].y; // 食指尖
+                const deltaY = currentY - lastHandY;
+
+                // 偵測「向上揮動」的瞬間
+                if (deltaY < -sensitivity) { 
+                    if (!gameActive) {
+                        resetGame();
+                    } else if (!isJumping) {
+                        velocity = -8;
+                        isJumping = true; // 鎖定直到手停下或往下
+                    }
+                    dctx.fillStyle = "#00ff00"; // 觸發時變綠點
+                } else {
+                    if (deltaY > 0) isJumping = false; // 手往下移動時解除鎖定
+                    dctx.fillStyle = "red";
+                }
+
+                lastHandY = currentY;
+                dctx.beginPath();
+                dctx.arc(results.multiHandLandmarks[0][8].x * debugCanvas.width, currentY * debugCanvas.height, 5, 0, Math.PI*2);
+                dctx.fill();
+            }
+            dctx.restore();
+        }
+
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 480, height: 360
+        });
+
+        canvas.addEventListener('mousedown', () => { if(!gameActive) resetGame(); else velocity = -8; });
+        
+        camera.start();
+        draw();
+    </script>
+</body>
+</html>
