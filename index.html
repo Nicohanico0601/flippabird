@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>極速感應 AI Flappy Bird</title>
+    <title>AI Flappy Bird - 纖細水管版</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <style>
@@ -31,11 +31,12 @@
         // --- 遊戲參數 ---
         let birdY = 300, velocity = 0, gravity = 0.5;
         let pipes = [], score = 0, gameActive = false;
+        const PIPE_WIDTH = 30; // <--- 這裡調細了 (原本是 52)
         
         // --- 運動偵測參數 ---
         let lastHandY = 0;
         let isJumping = false;
-        const sensitivity = 0.012; // 揮動靈敏度：越小越靈敏
+        const sensitivity = 0.012; 
 
         function createPipe() {
             const gap = 160;
@@ -62,19 +63,31 @@
 
                 for (let i = pipes.length - 1; i >= 0; i--) {
                     pipes[i].x -= 3.5;
+                    
+                    // 繪製纖細水管
                     ctx.fillStyle = "#2ecc71";
-                    ctx.fillRect(pipes[i].x, 0, 52, pipes[i].top);
-                    ctx.fillRect(pipes[i].x, canvas.height - pipes[i].bottom, 52, pipes[i].bottom);
+                    ctx.strokeStyle = "#27ae60";
+                    ctx.lineWidth = 2;
+                    // 上水管
+                    ctx.fillRect(pipes[i].x, 0, PIPE_WIDTH, pipes[i].top);
+                    ctx.strokeRect(pipes[i].x, 0, PIPE_WIDTH, pipes[i].top);
+                    // 下水管
+                    ctx.fillRect(pipes[i].x, canvas.height - pipes[i].bottom, PIPE_WIDTH, pipes[i].bottom);
+                    ctx.strokeRect(pipes[i].x, canvas.height - pipes[i].bottom, PIPE_WIDTH, pipes[i].bottom);
 
-                    // 碰撞
-                    if (50 + 12 > pipes[i].x && 50 - 12 < pipes[i].x + 52) {
-                        if (birdY - 12 < pipes[i].top || birdY + 12 > canvas.height - pipes[i].bottom) gameActive = false;
+                    // 碰撞偵測 (根據新的 PIPE_WIDTH)
+                    const birdRadius = 12;
+                    if (50 + birdRadius > pipes[i].x && 50 - birdRadius < pipes[i].x + PIPE_WIDTH) {
+                        if (birdY - birdRadius < pipes[i].top || birdY + birdRadius > canvas.height - pipes[i].bottom) {
+                            gameActive = false;
+                        }
                     }
+
                     // 計分
                     if (!pipes[i].passed && pipes[i].x < 50) {
                         score++; scoreEl.innerText = score; pipes[i].passed = true;
                     }
-                    if (pipes[i].x < -60) pipes.splice(i, 1);
+                    if (pipes[i].x < -PIPE_WIDTH - 10) pipes.splice(i, 1);
                 }
                 if (birdY > canvas.height || birdY < 0) gameActive = false;
             } else {
@@ -85,13 +98,13 @@
                 ctx.font = "bold 30px Arial";
                 ctx.fillText(score === 0 ? "準備好了嗎？" : "GAME OVER", canvas.width/2, 280);
                 ctx.font = "18px Arial";
-                ctx.fillText("向上揮動手掌 或是 點擊畫面開始", canvas.width/2, 330);
+                ctx.fillText("向上揮動手掌 或是 點擊開始", canvas.width/2, 330);
             }
 
             // 畫小鳥
             ctx.fillStyle = "#f1c40f";
             ctx.beginPath(); ctx.arc(50, birdY, 15, 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = "#000"; ctx.stroke();
+            ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
 
             requestAnimationFrame(draw);
         }
@@ -102,20 +115,19 @@
             dctx.drawImage(results.image, 0, 0, debugCanvas.width, debugCanvas.height);
             
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const currentY = results.multiHandLandmarks[0][8].y; // 食指尖
+                const currentY = results.multiHandLandmarks[0][8].y; 
                 const deltaY = currentY - lastHandY;
 
-                // 偵測「向上揮動」的瞬間
                 if (deltaY < -sensitivity) { 
                     if (!gameActive) {
                         resetGame();
                     } else if (!isJumping) {
                         velocity = -8;
-                        isJumping = true; // 鎖定直到手停下或往下
+                        isJumping = true;
                     }
-                    dctx.fillStyle = "#00ff00"; // 觸發時變綠點
+                    dctx.fillStyle = "#00ff00"; 
                 } else {
-                    if (deltaY > 0) isJumping = false; // 手往下移動時解除鎖定
+                    if (deltaY > 0) isJumping = false; 
                     dctx.fillStyle = "red";
                 }
 
